@@ -38,6 +38,23 @@ io.on("connection", (socket) => {
     socket.emit("users-list", roomUsers);
   });
 
+
+
+
+  socket.on("get-users", () => {
+  console.log("🔥 get-users triggered"); // 👈 add this
+
+  const user = users[socket.id];
+  if (!user) return;
+
+  const roomUsers = Object.values(users)
+    .filter(u => u.room === user.room)
+    .map(u => u.username);
+
+  socket.emit("users-list", roomUsers);
+});
+
+
   // 🔥 PRIVATE MESSAGE
   socket.on("private-message", ({ to, message }) => {
     const sender = users[socket.id];
