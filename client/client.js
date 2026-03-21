@@ -1,8 +1,10 @@
+#!/usr/bin/env node
+
 const io = require("socket.io-client");
 const readline = require("readline");
 const chalk = require("chalk");
 
-const socket = io("http://localhost:3000");
+const socket = io("https://terminal-chat-app-o159.onrender.com"); // 👈 apna URL
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -12,34 +14,63 @@ const rl = readline.createInterface({
 let username = "";
 let room = "";
 
-// Get current time
+// Time
 function getTime() {
-  const now = new Date();
-  return now.toLocaleTimeString();
+  return new Date().toLocaleTimeString();
 }
 
-// Step 1: username
+// START
 rl.question(chalk.green("Enter your username: "), (name) => {
   username = name;
 
-  console.log(chalk.yellow("Type /join roomName to enter a room"));
+  console.log(chalk.yellow("Commands:"));
+  console.log(chalk.yellow("/join roomName"));
+  console.log(chalk.yellow("/users"));
+  console.log(chalk.yellow("/msg username message"));
 
   rl.setPrompt(chalk.blue("> "));
   rl.prompt();
 
   rl.on("line", (input) => {
+
+    // JOIN ROOM
     if (input.startsWith("/join")) {
       room = input.split(" ")[1];
 
       if (!room) {
-        console.log(chalk.red("Please provide a room name"));
+        console.log(chalk.red("Provide room name"));
       } else {
         socket.emit("join", { username, room });
-        console.log(chalk.green(`Joined room: ${room}`));
+        console.log(chalk.green(`Joined ${room}`));
       }
-    } else {
+    }
+
+    // 🔥 USERS LIST
+    else if (input === "/users") {
       if (!room) {
-        console.log(chalk.red("Join a room first using /join roomName"));
+        console.log(chalk.red("Join room first"));
+      } else {
+        socket.emit("get-users");
+      }
+    }
+
+    // 🔥 PRIVATE MESSAGE
+    else if (input.startsWith("/msg")) {
+      const parts = input.split(" ");
+      const to = parts[1];
+      const message = parts.slice(2).join(" ");
+
+      if (!to || !message) {
+        console.log(chalk.red("Usage: /msg username message"));
+      } else {
+        socket.emit("private-message", { to, message });
+      }
+    }
+
+    // NORMAL MESSAGE
+    else {
+      if (!room) {
+        console.log(chalk.red("Join room first"));
       } else {
         socket.emit("send-message", input);
       }
@@ -49,13 +80,32 @@ rl.question(chalk.green("Enter your username: "), (name) => {
   });
 });
 
-// Listen for messages
+// RECEIVE NORMAL MESSAGE
 socket.on("message", (message) => {
   console.log(
     "\n" +
       chalk.gray(`[${getTime()}]`) +
       " " +
       chalk.white(message)
+  );
+  rl.prompt();
+});
+
+// 🔥 RECEIVE USERS LIST
+socket.on("users-list", (users) => {
+  console.log(
+    "\n" +
+      chalk.cyan("Active users:\n") +
+      users.map(u => "- " + u).join("\n")
+  );
+  rl.prompt();
+});
+
+// 🔥 RECEIVE PRIVATE MESSAGE
+socket.on("private-message", (message) => {
+  console.log(
+    "\n" +
+      chalk.magenta(`[PRIVATE] ${message}`)
   );
   rl.prompt();
 });
