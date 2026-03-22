@@ -17,33 +17,28 @@ let isCodeMode = false;
 let codeBuffer = [];
 let language = "";
 
-// TIME
-function getTime() {
-  return new Date().toLocaleTimeString();
-}
-
-// HELP (NOW ACTUALLY USEFUL)
+// HELP
 function showHelp() {
-  console.log(chalk.cyan("\n🚀 Commands:\n"));
-  console.log(chalk.yellow("/create <room>") + " → Create & join room");
-  console.log(chalk.yellow("/join <room>") + " → Join room");
-  console.log(chalk.yellow("/leave") + " → Leave room");
-  console.log(chalk.yellow("/users") + " → Show users");
-  console.log(chalk.yellow("/msg <user> <msg>") + " → Private message");
-  console.log(chalk.yellow("/code <lang>") + " → Share code");
-  console.log(chalk.yellow("/clear") + " → Clear screen");
-  console.log(chalk.yellow("/exit") + " → Exit app");
-  console.log(chalk.yellow("/help") + " → Show commands\n");
+  console.log(chalk.cyan("\nCommands:\n"));
+  console.log("/join <room>");
+  console.log("/leave");
+  console.log("/users");
+  console.log("/rooms");
+  console.log("/delete <room>");
+  console.log("/msg <user> <msg>");
+  console.log("/code <lang>");
+  console.log("/clear");
+  console.log("/exit\n");
 }
 
 // CONNECT
 socket.on("connect", () => {
-  console.log(chalk.green("✅ Connected"));
+  console.log(chalk.green("Connected"));
 
-  rl.question(chalk.green("Enter username: "), (name) => {
+  rl.question("Enter username: ", (name) => {
     username = name;
     showHelp();
-    rl.setPrompt(chalk.blue("> "));
+    rl.setPrompt("> ");
     rl.prompt();
   });
 });
@@ -51,16 +46,12 @@ socket.on("connect", () => {
 // INPUT
 rl.on("line", (input) => {
 
-  // CODE MODE
   if (isCodeMode) {
-    if (input.trim() === "END") {
+    if (input === "END") {
       socket.emit("code-snippet", {
         language,
         content: codeBuffer.join("\n")
       });
-
-      console.log(chalk.green("✅ Code sent"));
-
       isCodeMode = false;
       codeBuffer = [];
     } else {
@@ -70,101 +61,48 @@ rl.on("line", (input) => {
     return;
   }
 
-  // HELP
-  if (input === "/help") {
-    showHelp();
+  if (input.startsWith("/join")) {
+    room = input.split(" ")[1];
+    socket.emit("join", { username, room });
   }
 
-  // CREATE ROOM
-  else if (input.startsWith("/create")) {
-    const newRoom = input.split(" ")[1];
-    if (!newRoom) {
-      console.log(chalk.red("❌ Provide room name"));
-    } else {
-      room = newRoom;
-      socket.emit("join", { username, room });
-      console.log(chalk.green(`✅ Created & joined ${room}`));
-    }
-  }
-
-  // JOIN
-  else if (input.startsWith("/join")) {
-    const newRoom = input.split(" ")[1];
-    if (!newRoom) {
-      console.log(chalk.red("❌ Provide room name"));
-    } else {
-      room = newRoom;
-      socket.emit("join", { username, room });
-      console.log(chalk.green(`✅ Joined ${room}`));
-    }
-  }
-
-  // LEAVE
-  else if (input === "/leave") {
-    if (!room) {
-      console.log(chalk.red("❌ Not in any room"));
-    } else {
-      console.log(chalk.yellow(`Left ${room}`));
-      room = "";
-    }
-  }
-
-  // USERS
   else if (input === "/users") {
-    if (!room) {
-      console.log(chalk.red("❌ Join a room first"));
-    } else {
-      socket.emit("get-users");
-    }
+    socket.emit("get-users");
   }
 
-  // PRIVATE
+  else if (input === "/rooms") {
+    socket.emit("get-rooms");
+  }
+
+  else if (input.startsWith("/delete")) {
+    const r = input.split(" ")[1];
+    socket.emit("delete-room", r);
+  }
+
   else if (input.startsWith("/msg")) {
-    if (!room) {
-      console.log(chalk.red("❌ Join room first"));
-    } else {
-      const parts = input.split(" ");
-      const to = parts[1];
-      const message = parts.slice(2).join(" ");
-
-      if (!to || !message) {
-        console.log(chalk.red("❌ Usage: /msg user message"));
-      } else {
-        socket.emit("private-message", { to, message });
-      }
-    }
+    const parts = input.split(" ");
+    socket.emit("private-message", {
+      to: parts[1],
+      message: parts.slice(2).join(" ")
+    });
   }
 
-  // CODE
   else if (input.startsWith("/code")) {
-    if (!room) {
-      console.log(chalk.red("❌ Join a room first"));
-    } else {
-      language = input.split(" ")[1] || "text";
-      console.log(chalk.cyan("\nEnter code (END to finish):\n"));
-      isCodeMode = true;
-      codeBuffer = [];
-    }
+    language = input.split(" ")[1] || "text";
+    console.log("Enter code (END to finish):");
+    isCodeMode = true;
   }
 
-  // CLEAR
   else if (input === "/clear") {
     console.clear();
   }
 
-  // EXIT
   else if (input === "/exit") {
-    console.log(chalk.red("👋 Exiting..."));
     process.exit(0);
   }
 
-  // NORMAL MESSAGE
   else {
-    if (!room) {
-      console.log(chalk.red("❌ Join a room first"));
-    } else {
-      socket.emit("send-message", input);
-    }
+    socket.emit("send-message", input);
   }
 
   rl.prompt();
@@ -173,26 +111,34 @@ rl.on("line", (input) => {
 // RECEIVE
 
 socket.on("message", (msg) => {
-  console.log("\n" + chalk.gray(`[${getTime()}] `) + chalk.white(msg));
+  console.log(chalk.gray(msg));
   rl.prompt();
 });
 
 socket.on("users-list", (users) => {
-  console.log("\n" + chalk.cyan("👥 Users:\n"));
-  users.forEach(u => console.log(chalk.yellow("- " + u)));
+  console.log(chalk.yellow("\nUsers:"));
+  users.forEach(u => console.log("- " + u));
   rl.prompt();
 });
 
+socket.on("rooms-list", (rooms) => {
+  console.log(chalk.cyan("\nRooms:"));
+  rooms.forEach(r => console.log("- " + r));
+  rl.prompt();
+});
+
+socket.on("history", (messages) => {
+  console.log(chalk.magenta("\nLast Messages:\n"));
+  messages.forEach(m => console.log(m));
+});
+
 socket.on("private-message", (msg) => {
-  console.log("\n" + chalk.magenta(`[PRIVATE] ${msg}`));
+  console.log(chalk.red("[PRIVATE] " + msg));
   rl.prompt();
 });
 
 socket.on("code-snippet", (data) => {
-  console.log(
-    "\n" +
-      chalk.green(`[${getTime()}] ${data.username} shared ${data.language} code:\n`)
-  );
-  console.log(chalk.yellow(data.content));
+  console.log(`\n${data.username} shared code:\n`);
+  console.log(chalk.green(data.content));
   rl.prompt();
 });
