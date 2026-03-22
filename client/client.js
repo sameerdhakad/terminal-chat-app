@@ -4,36 +4,11 @@ const io = require("socket.io-client");
 const readline = require("readline");
 const chalk = require("chalk");
 
-const socket = io("https://terminal-chat-app-o159.onrender.com" , {
-     reconnection: true,
+const socket = io("https://terminal-chat-app-o159.onrender.com", {
+  reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000
 });
-
-
-
-socket.on("connect", () => {
-  console.log("✅ Connected to server");
-});
-
-socket.on("disconnect", () => {
-  console.log("⚠️ Disconnected from server...");
-});
-
-socket.on("reconnect", () => {
-  console.log("🔄 Reconnected!");
-  
-  // 🔥 IMPORTANT: rejoin room
-  if (username && room) {
-    socket.emit("join", { username, room });
-    console.log(`Rejoined room: ${room}`);
-  }
-});
-
-socket.on("connect_error", () => {
-  console.log("❌ Trying to reconnect...");
-});
-
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -43,73 +18,106 @@ const rl = readline.createInterface({
 let username = "";
 let room = "";
 
-// Time
+// 🕒 Time
 function getTime() {
   return new Date().toLocaleTimeString();
 }
 
-// START
-rl.question(chalk.green("Enter your username: "), (name) => {
-  username = name;
+// ================= SOCKET EVENTS =================
 
-  console.log(chalk.yellow("Commands:"));
-  console.log(chalk.yellow("/join roomName"));
-  console.log(chalk.yellow("/users"));
-  console.log(chalk.yellow("/msg username message"));
+// ✅ Connected
+socket.on("connect", () => {
+  console.log("✅ Connected to server");
 
-  rl.setPrompt(chalk.blue("> "));
-  rl.prompt();
+  // ask username ONLY after connection
+  if (!username) {
+    rl.question(chalk.green("Enter your username: "), (name) => {
+      username = name;
 
-  rl.on("line", (input) => {
+      console.log(chalk.yellow("Commands:"));
+      console.log("/join roomName");
+      console.log("/users");
+      console.log("/msg username message");
 
-    // JOIN ROOM
-    if (input.startsWith("/join")) {
-      room = input.split(" ")[1];
-
-      if (!room) {
-        console.log(chalk.red("Provide room name"));
-      } else {
-        socket.emit("join", { username, room });
-        console.log(chalk.green(`Joined ${room}`));
-      }
-    }
-
-    // 🔥 USERS LIST
-    else if (input === "/users") {
-      if (!room) {
-        console.log(chalk.red("Join room first"));
-      } else {
-        socket.emit("get-users");
-      }
-    }
-
-    // 🔥 PRIVATE MESSAGE
-    else if (input.startsWith("/msg")) {
-      const parts = input.split(" ");
-      const to = parts[1];
-      const message = parts.slice(2).join(" ");
-
-      if (!to || !message) {
-        console.log(chalk.red("Usage: /msg username message"));
-      } else {
-        socket.emit("private-message", { to, message });
-      }
-    }
-
-    // NORMAL MESSAGE
-    else {
-      if (!room) {
-        console.log(chalk.red("Join room first"));
-      } else {
-        socket.emit("send-message", input);
-      }
-    }
-
-    rl.prompt();
-  });
+      rl.setPrompt(chalk.blue("> "));
+      rl.prompt();
+    });
+  }
 });
 
-// RECEIVE NORMAL MESSAGE
+// ❌ Disconnected
+socket.on("disconnect", () => {
+  console.log("⚠️ Disconnected from server...");
+});
+
+// 🔄 Reconnect
+socket.on("reconnect", () => {
+  console.log("🔄 Reconnected!");
+
+  if (username && room) {
+    socket.emit("join", { username, room });
+    console.log(`Rejoined room: ${room}`);
+  }
+});
+
+// ❌ Error
+socket.on("connect_error", () => {
+  console.log("❌ Trying to reconnect...");
+});
+
+// ================= INPUT HANDLER =================
+
+rl.on("line", (input) => {
+
+  // JOIN ROOM
+  if (input.startsWith("/join")) {
+    room = input.split(" ")[1];
+
+    if (!room) {
+      console.log(chalk.red("Provide room name"));
+    } else {
+      socket.emit("join", { username, room });
+      console.log(chalk.green(`Joined ${room}`));
+    }
+  }
+
+  // USERS
+  else if (input === "/users") {
+    if (!room) {
+      console.log(chalk.red("Join room first"));
+    } else {
+      socket.emit("get-users");
+    }
+  }
+
+  // PRIVATE MESSAGE
+  else if (input.startsWith("/msg")) {
+    const parts = input.split(" ");
+    const to = parts[1];
+    const message = parts.slice(2).join(" ");
+
+    if (!to || !message) {
+      console.log(chalk.red("Usage: /msg username message"));
+    } else {
+      socket.emit("private-message", { to, message });
+    }
+  }
+
+  // NORMAL MESSAGE
+  else {
+    if (!room) {
+      console.log(chalk.red("Join room first"));
+    } else {
+      socket.emit("send-message", input);
+    }
+  }
+
+  rl.prompt();
+});
+
+// ================= RECEIVE EVENTS =================
+
+// NORMAL MESSAGE
 socket.on("message", (message) => {
   console.log(
     "\n" +
@@ -120,7 +128,8 @@ socket.on("message", (message) => {
   rl.prompt();
 });
 
-// 🔥 RECEIVE USERS LIST
+// 🔥 USERS LIST (FIXED DUPLICATE ISSUE)
+socket.off("users-list");
 socket.on("users-list", (users) => {
   console.log(
     "\n" +
@@ -130,7 +139,8 @@ socket.on("users-list", (users) => {
   rl.prompt();
 });
 
-// 🔥 RECEIVE PRIVATE MESSAGE
+// PRIVATE MESSAGE
+socket.off("private-message");
 socket.on("private-message", (message) => {
   console.log(
     "\n" +
