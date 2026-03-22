@@ -5,9 +5,7 @@ const io = require("socket.io")(3000, {
 let users = {};
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
 
-  // JOIN
   socket.on("join", ({ username, room }) => {
     users[socket.id] = { username, room };
     socket.join(room);
@@ -15,18 +13,13 @@ io.on("connection", (socket) => {
     socket.to(room).emit("message", `${username} joined ${room}`);
   });
 
-  // NORMAL MESSAGE
   socket.on("send-message", (message) => {
     const user = users[socket.id];
     if (!user) return;
 
-    io.to(user.room).emit(
-      "message",
-      `${user.username}: ${message}`
-    );
+    io.to(user.room).emit("message", `${user.username}: ${message}`);
   });
 
-  // USERS LIST
   socket.on("get-users", () => {
     const user = users[socket.id];
     if (!user) return;
@@ -38,7 +31,6 @@ io.on("connection", (socket) => {
     socket.emit("users-list", roomUsers);
   });
 
-  // PRIVATE MESSAGE
   socket.on("private-message", ({ to, message }) => {
     const sender = users[socket.id];
     if (!sender) return;
@@ -48,16 +40,10 @@ io.on("connection", (socket) => {
     );
 
     if (target) {
-      io.to(target).emit(
-        "private-message",
-        `${sender.username}: ${message}`
-      );
-    } else {
-      socket.emit("message", `User ${to} not found`);
+      io.to(target).emit("private-message", `${sender.username}: ${message}`);
     }
   });
 
-  // 🔥 CODE SNIPPET
   socket.on("code-snippet", ({ language, content }) => {
     const user = users[socket.id];
     if (!user) return;
@@ -69,11 +55,10 @@ io.on("connection", (socket) => {
     });
   });
 
-  // DISCONNECT
   socket.on("disconnect", () => {
     const user = users[socket.id];
     if (user) {
-      io.to(user.room).emit(`${user.username} left`);
+      io.to(user.room).emit("message", `${user.username} left`);
       delete users[socket.id];
     }
   });
