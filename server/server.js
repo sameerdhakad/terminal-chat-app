@@ -60,18 +60,17 @@ io.on("connection", (socket) => {
   });
 
   // DELETE ROOM
- socket.on("delete-room", (roomName) => {
+socket.on("delete-room", async (roomName) => {
 
-  if (!rooms[roomName]) {
-    socket.emit("message", createSystemMsg("Room does not exist"));
-    return;
-  }
+  const room = io.sockets.adapter.rooms.get(roomName);
 
-  if (rooms[roomName].users.length > 0) {
+  // room exists and has users
+  if (room && room.size > 0) {
     socket.emit("message", createSystemMsg("Room is not empty"));
     return;
   }
 
+  // room empty or not exists → safe to delete
   delete rooms[roomName];
 
   socket.emit("message", createSystemMsg(`Room '${roomName}' deleted`));
