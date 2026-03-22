@@ -18,133 +18,143 @@ const rl = readline.createInterface({
 let username = "";
 let room = "";
 
-// 🕒 Time
+// 🔥 CODE MODE
+let isWritingCode = false;
+let codeBuffer = [];
+let currentLanguage = "";
+
+// TIME
 function getTime() {
   return new Date().toLocaleTimeString();
 }
 
-// ================= SOCKET EVENTS =================
+// ================= CONNECTION =================
 
-// ✅ Connected
 socket.on("connect", () => {
-  console.log("✅ Connected to server");
+  console.log("✅ Connected");
 
-  // ask username ONLY after connection
   if (!username) {
     rl.question(chalk.green("Enter your username: "), (name) => {
       username = name;
 
       console.log(chalk.yellow("Commands:"));
-      console.log("/join roomName");
+      console.log("/join room");
       console.log("/users");
-      console.log("/msg username message");
+      console.log("/msg user msg");
+      console.log("/code lang");
 
-      rl.setPrompt(chalk.blue("> "));
+      rl.setPrompt("> ");
       rl.prompt();
     });
   }
 });
 
-// ❌ Disconnected
 socket.on("disconnect", () => {
-  console.log("⚠️ Disconnected from server...");
+  console.log("⚠️ Disconnected...");
 });
 
-// 🔄 Reconnect
 socket.on("reconnect", () => {
-  console.log("🔄 Reconnected!");
+  console.log("🔄 Reconnected");
 
   if (username && room) {
     socket.emit("join", { username, room });
-    console.log(`Rejoined room: ${room}`);
   }
 });
 
-// ❌ Error
-socket.on("connect_error", () => {
-  console.log("❌ Trying to reconnect...");
-});
-
-// ================= INPUT HANDLER =================
+// ================= INPUT =================
 
 rl.on("line", (input) => {
 
-  // JOIN ROOM
+  // 🔥 CODE MODE
+  if (isWritingCode) {
+    if (input.trim() === "END") {
+      socket.emit("code-snippet", {
+        language: currentLanguage,
+        content: codeBuffer.join("\n")
+      });
+
+      console.log("✅ Code sent");
+
+      isWritingCode = false;
+      codeBuffer = [];
+      currentLanguage = "";
+    } else {
+      codeBuffer.push(input);
+    }
+
+    rl.prompt();
+    return;
+  }
+
+  // JOIN
   if (input.startsWith("/join")) {
     room = input.split(" ")[1];
 
-    if (!room) {
-      console.log(chalk.red("Provide room name"));
-    } else {
-      socket.emit("join", { username, room });
-      console.log(chalk.green(`Joined ${room}`));
-    }
+    socket.emit("join", { username, room });
+    console.log(`Joined ${room}`);
   }
 
   // USERS
   else if (input === "/users") {
-    if (!room) {
-      console.log(chalk.red("Join room first"));
-    } else {
-      socket.emit("get-users");
-    }
+    socket.emit("get-users");
   }
 
-  // PRIVATE MESSAGE
+  // PRIVATE
   else if (input.startsWith("/msg")) {
     const parts = input.split(" ");
     const to = parts[1];
     const message = parts.slice(2).join(" ");
 
-    if (!to || !message) {
-      console.log(chalk.red("Usage: /msg username message"));
-    } else {
-      socket.emit("private-message", { to, message });
-    }
+    socket.emit("private-message", { to, message });
   }
 
-  // NORMAL MESSAGE
+  // 🔥 START CODE MODE
+  else if (input.startsWith("/code")) {
+    currentLanguage = input.split(" ")[1] || "text";
+
+    console.log(`Enter ${currentLanguage} code (END to finish):`);
+    isWritingCode = true;
+    codeBuffer = [];
+  }
+
+  // NORMAL
   else {
-    if (!room) {
-      console.log(chalk.red("Join room first"));
-    } else {
-      socket.emit("send-message", input);
-    }
+    socket.emit("send-message", input);
   }
 
   rl.prompt();
 });
 
-// ================= RECEIVE EVENTS =================
+// ================= RECEIVE =================
 
-// NORMAL MESSAGE
-socket.on("message", (message) => {
-  console.log(
-    "\n" +
-      chalk.gray(`[${getTime()}]`) +
-      " " +
-      chalk.white(message)
-  );
+// MESSAGE
+socket.on("message", (msg) => {
+  console.log(`\n[${getTime()}] ${msg}`);
   rl.prompt();
 });
 
-// 🔥 USERS LIST (FIXED DUPLICATE ISSUE)
+// USERS
 socket.off("users-list");
 socket.on("users-list", (users) => {
-  console.log(
-    "\n" +
-      chalk.cyan("Active users:\n") +
-      users.map(u => "- " + u).join("\n")
-  );
+  console.log("\nActive users:");
+  users.forEach(u => console.log("- " + u));
   rl.prompt();
 });
 
-// PRIVATE MESSAGE
+// PRIVATE
 socket.off("private-message");
-socket.on("private-message", (message) => {
+socket.on("private-message", (msg) => {
+  console.log(`\n[PRIVATE] ${msg}`);
+  rl.prompt();
+});
+
+// 🔥 CODE SNIPPET
+socket.off("code-snippet");
+socket.on("code-snippet", (data) => {
   console.log(
-    "\n" +
-      chalk.magenta(`[PRIVATE] ${message}`)
+    `\n[${getTime()}] ${data.username} shared ${data.language} code:\n`
   );
+
+  console.log(chalk.yellow(data.content));
   rl.prompt();
 });
