@@ -13,17 +13,17 @@ const rl = readline.createInterface({
 
 let username = "";
 let room = "";
-let isCodeMode = false;
+let codeMode = false;
 let buffer = [];
 let lang = "";
 
-// HEADER
+// ===== UI =====
+
 function banner() {
   console.clear();
-  console.log(chalk.cyan.bold("⚡ Terminal Chat CLI ⚡\n"));
+  console.log(chalk.cyan.bold("\n⚡ Terminal Chat CLI ⚡\n"));
 }
 
-// HELP
 function help() {
   console.log(chalk.yellow("\nCommands:\n"));
   console.log("/join <room>");
@@ -37,9 +37,11 @@ function help() {
   console.log("/exit\n");
 }
 
-// CONNECT
+// ===== CONNECT =====
+
 socket.on("connect", () => {
   banner();
+
   rl.question(chalk.green("Username: "), (name) => {
     username = name;
     help();
@@ -48,16 +50,17 @@ socket.on("connect", () => {
   });
 });
 
-// INPUT
+// ===== INPUT =====
+
 rl.on("line", (input) => {
 
-  if (isCodeMode) {
+  if (codeMode) {
     if (input === "END") {
       socket.emit("code-snippet", {
         language: lang,
         content: buffer.join("\n")
       });
-      isCodeMode = false;
+      codeMode = false;
       buffer = [];
     } else buffer.push(input);
     rl.prompt();
@@ -84,24 +87,31 @@ rl.on("line", (input) => {
   else if (input.startsWith("/code")) {
     lang = input.split(" ")[1] || "text";
     console.log(chalk.magenta("\nPaste code (END to send)\n"));
-    isCodeMode = true;
+    codeMode = true;
   }
 
   else if (input === "/clear") banner();
   else if (input === "/exit") process.exit(0);
-  else socket.emit("send-message", input);
+
+  else {
+    if (!room) {
+      console.log(chalk.red("Join a room first"));
+    } else {
+      socket.emit("send-message", input);
+    }
+  }
 
   rl.prompt();
 });
 
-// RECEIVE
+// ===== RECEIVE =====
 
 socket.on("history", (msgs) => {
-  console.log(chalk.gray("\n--- Chat History ---\n"));
-  msgs.forEach(m => render(m));
+  console.log(chalk.gray("\n--- Last Messages ---\n"));
+  msgs.forEach(render);
 });
 
-socket.on("message", (msg) => render(msg));
+socket.on("message", render);
 
 socket.on("users-list", (users) => {
   console.log(chalk.cyan("\nUsers:"));
@@ -117,10 +127,12 @@ socket.on("private-message", (msg) => {
   console.log(chalk.red(`\n[PRIVATE ${msg.time}] ${msg.from}: ${msg.text}`));
 });
 
-socket.on("code-snippet", (msg) => render(msg));
+socket.on("code-snippet", render);
 
-// RENDER FUNCTION (🔥 CLEAN UI)
+// ===== RENDER =====
+
 function render(m) {
+
   if (m.type === "system") {
     console.log(chalk.gray(`[${m.time}] ${m.text}`));
   }

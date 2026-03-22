@@ -7,8 +7,8 @@ let rooms = {};
 
 io.on("connection", (socket) => {
 
+  // JOIN ROOM
   socket.on("join", ({ username, room }) => {
-
     users[socket.id] = { username, room };
 
     if (!rooms[room]) {
@@ -21,60 +21,53 @@ io.on("connection", (socket) => {
       rooms[room].users.push(username);
     }
 
-    // 🔥 SEND HISTORY (FIXED)
+    // SEND HISTORY
     socket.emit("history", rooms[room].messages);
 
-    const joinMsg = {
-      type: "system",
-      text: `${username} joined ${room}`,
-      time: new Date().toLocaleTimeString()
-    };
-
-    rooms[room].messages.push(joinMsg);
-    if (rooms[room].messages.length > 20) rooms[room].messages.shift();
+    const joinMsg = createSystemMsg(`${username} joined ${room}`);
+    saveMessage(room, joinMsg);
 
     socket.to(room).emit("message", joinMsg);
   });
 
-  socket.on("send-message", (message) => {
+  // SEND MESSAGE
+  socket.on("send-message", (text) => {
     const user = users[socket.id];
     if (!user) return;
 
     const msg = {
       type: "chat",
       user: user.username,
-      text: message,
-      time: new Date().toLocaleTimeString()
+      text,
+      time: now()
     };
 
-    rooms[user.room].messages.push(msg);
-    if (rooms[user.room].messages.length > 20) rooms[user.room].messages.shift();
-
+    saveMessage(user.room, msg);
     io.to(user.room).emit("message", msg);
   });
 
+  // USERS
   socket.on("get-users", () => {
     const user = users[socket.id];
     if (!user) return;
 
-    socket.emit("users-list", rooms[user.room].users);
+    socket.emit("users-list", rooms[user.room]?.users || []);
   });
 
+  // ROOMS
   socket.on("get-rooms", () => {
     socket.emit("rooms-list", Object.keys(rooms));
   });
 
+  // DELETE ROOM
   socket.on("delete-room", (roomName) => {
     if (rooms[roomName] && rooms[roomName].users.length === 0) {
       delete rooms[roomName];
-      socket.emit("message", {
-        type: "system",
-        text: `Room ${roomName} deleted`,
-        time: new Date().toLocaleTimeString()
-      });
+      socket.emit("message", createSystemMsg(`Room ${roomName} deleted`));
     }
   });
 
+  // PRIVATE
   socket.on("private-message", ({ to, message }) => {
     const sender = users[socket.id];
     if (!sender) return;
@@ -87,11 +80,12 @@ io.on("connection", (socket) => {
       io.to(target).emit("private-message", {
         from: sender.username,
         text: message,
-        time: new Date().toLocaleTimeString()
+        time: now()
       });
     }
   });
 
+  // CODE
   socket.on("code-snippet", ({ language, content }) => {
     const user = users[socket.id];
     if (!user) return;
@@ -101,15 +95,14 @@ io.on("connection", (socket) => {
       user: user.username,
       language,
       content,
-      time: new Date().toLocaleTimeString()
+      time: now()
     };
 
-    rooms[user.room].messages.push(msg);
-    if (rooms[user.room].messages.length > 20) rooms[user.room].messages.shift();
-
+    saveMessage(user.room, msg);
     io.to(user.room).emit("code-snippet", msg);
   });
 
+  // DISCONNECT
   socket.on("disconnect", () => {
     const user = users[socket.id];
     if (!user) return;
@@ -126,3 +119,22 @@ io.on("connection", (socket) => {
   });
 
 });
+
+// ===== HELPERS =====
+
+function now() {
+  return new Date().toLocaleTimeString();
+}
+
+function createSystemMsg(text) {
+  return { type: "system", text, time: now() };
+}
+
+function saveMessage(room, msg) {
+  if (!rooms[room]) return;
+
+  rooms[room].messages.push(msg);
+  if (rooms[room].messages.length > 20) {
+    rooms[room].messages.shift();
+  }
+}
