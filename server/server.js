@@ -5,48 +5,54 @@ const io = require("socket.io")(3000, {
 let users = {};
 let rooms = {};
 
-// JOIN
 io.on("connection", (socket) => {
 
   socket.on("join", ({ username, room }) => {
 
     users[socket.id] = { username, room };
 
-    // create room if not exists
     if (!rooms[room]) {
-      rooms[room] = {
-        users: [],
-        messages: []
-      };
+      rooms[room] = { users: [], messages: [] };
     }
-
-    rooms[room].users.push(username);
 
     socket.join(room);
 
-    // 🔥 SEND HISTORY
+    if (!rooms[room].users.includes(username)) {
+      rooms[room].users.push(username);
+    }
+
+    // 🔥 SEND HISTORY (FIXED)
     socket.emit("history", rooms[room].messages);
 
-    socket.to(room).emit("message", `${username} joined ${room}`);
+    const joinMsg = {
+      type: "system",
+      text: `${username} joined ${room}`,
+      time: new Date().toLocaleTimeString()
+    };
+
+    rooms[room].messages.push(joinMsg);
+    if (rooms[room].messages.length > 20) rooms[room].messages.shift();
+
+    socket.to(room).emit("message", joinMsg);
   });
 
-  // MESSAGE
   socket.on("send-message", (message) => {
     const user = users[socket.id];
     if (!user) return;
 
-    const msg = `${user.username}: ${message}`;
+    const msg = {
+      type: "chat",
+      user: user.username,
+      text: message,
+      time: new Date().toLocaleTimeString()
+    };
 
-    // store last 20
     rooms[user.room].messages.push(msg);
-    if (rooms[user.room].messages.length > 20) {
-      rooms[user.room].messages.shift();
-    }
+    if (rooms[user.room].messages.length > 20) rooms[user.room].messages.shift();
 
     io.to(user.room).emit("message", msg);
   });
 
-  // USERS
   socket.on("get-users", () => {
     const user = users[socket.id];
     if (!user) return;
@@ -54,7 +60,21 @@ io.on("connection", (socket) => {
     socket.emit("users-list", rooms[user.room].users);
   });
 
-  // PRIVATE
+  socket.on("get-rooms", () => {
+    socket.emit("rooms-list", Object.keys(rooms));
+  });
+
+  socket.on("delete-room", (roomName) => {
+    if (rooms[roomName] && rooms[roomName].users.length === 0) {
+      delete rooms[roomName];
+      socket.emit("message", {
+        type: "system",
+        text: `Room ${roomName} deleted`,
+        time: new Date().toLocaleTimeString()
+      });
+    }
+  });
+
   socket.on("private-message", ({ to, message }) => {
     const sender = users[socket.id];
     if (!sender) return;
@@ -64,38 +84,32 @@ io.on("connection", (socket) => {
     );
 
     if (target) {
-      io.to(target).emit("private-message", `${sender.username}: ${message}`);
+      io.to(target).emit("private-message", {
+        from: sender.username,
+        text: message,
+        time: new Date().toLocaleTimeString()
+      });
     }
   });
 
-  // CODE
   socket.on("code-snippet", ({ language, content }) => {
     const user = users[socket.id];
     if (!user) return;
 
-    io.to(user.room).emit("code-snippet", {
-      username: user.username,
+    const msg = {
+      type: "code",
+      user: user.username,
       language,
-      content
-    });
+      content,
+      time: new Date().toLocaleTimeString()
+    };
+
+    rooms[user.room].messages.push(msg);
+    if (rooms[user.room].messages.length > 20) rooms[user.room].messages.shift();
+
+    io.to(user.room).emit("code-snippet", msg);
   });
 
-  // 🔥 GET ROOMS
-  socket.on("get-rooms", () => {
-    socket.emit("rooms-list", Object.keys(rooms));
-  });
-
-  // 🔥 DELETE ROOM
-  socket.on("delete-room", (roomName) => {
-    if (rooms[roomName] && rooms[roomName].users.length === 0) {
-      delete rooms[roomName];
-      socket.emit("message", `Room ${roomName} deleted`);
-    } else {
-      socket.emit("message", `Room not empty or doesn't exist`);
-    }
-  });
-
-  // DISCONNECT
   socket.on("disconnect", () => {
     const user = users[socket.id];
     if (!user) return;
