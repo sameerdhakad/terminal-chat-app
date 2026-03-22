@@ -4,7 +4,36 @@ const io = require("socket.io-client");
 const readline = require("readline");
 const chalk = require("chalk");
 
-const socket = io("https://terminal-chat-app-o159.onrender.com"); // 👈 apna URL
+const socket = io("https://terminal-chat-app-o159.onrender.com" , {
+     reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000
+});
+
+
+
+socket.on("connect", () => {
+  console.log("✅ Connected to server");
+});
+
+socket.on("disconnect", () => {
+  console.log("⚠️ Disconnected from server...");
+});
+
+socket.on("reconnect", () => {
+  console.log("🔄 Reconnected!");
+  
+  // 🔥 IMPORTANT: rejoin room
+  if (username && room) {
+    socket.emit("join", { username, room });
+    console.log(`Rejoined room: ${room}`);
+  }
+});
+
+socket.on("connect_error", () => {
+  console.log("❌ Trying to reconnect...");
+});
+
 
 const rl = readline.createInterface({
   input: process.stdin,
