@@ -7,29 +7,32 @@ let rooms = {};
 
 io.on("connection", (socket) => {
 
-  // JOIN ROOM
+  // ===== JOIN =====
   socket.on("join", ({ username, room }) => {
 
-  users[socket.id] = { username, room };
+    if (!username || !room) return;
 
-  if (!rooms[room]) {
-    rooms[room] = { messages: [] };
-  }
+    users[socket.id] = { username, room };
 
-  socket.join(room);
+    if (!rooms[room]) {
+      rooms[room] = { messages: [] };
+    }
 
-  socket.emit("history", rooms[room].messages);
+    socket.join(room);
 
-  const joinMsg = createSystemMsg(`${username} joined ${room}`);
-  saveMessage(room, joinMsg);
+    // send history safely
+    socket.emit("history", rooms[room].messages || []);
 
-  socket.to(room).emit("message", joinMsg);
-});
+    const msg = system(`${username} joined ${room}`);
+    save(room, msg);
 
-  // SEND MESSAGE
+    socket.to(room).emit("message", msg);
+  });
+
+  // ===== MESSAGE =====
   socket.on("send-message", (text) => {
     const user = users[socket.id];
-    if (!user) return;
+    if (!user || !user.room) return;
 
     const msg = {
       type: "chat",
@@ -38,53 +41,73 @@ io.on("connection", (socket) => {
       time: now()
     };
 
-    saveMessage(user.room, msg);
+    save(user.room, msg);
     io.to(user.room).emit("message", msg);
   });
 
-  // USERS
+  // ===== USERS =====
   socket.on("get-users", () => {
     const user = users[socket.id];
-    if (!user) return;
+    if (!user || !user.room) return;
 
-    socket.emit("users-list", rooms[user.room]?.users || []);
+    const room = io.sockets.adapter.rooms.get(user.room);
+
+    let list = [];
+
+    if (room) {
+      list = Array.from(room).map(id => users[id]?.username).filter(Boolean);
+    }
+
+    socket.emit("users-list", list);
   });
 
-  // ROOMS
+  // ===== ROOMS =====
   socket.on("get-rooms", () => {
     socket.emit("rooms-list", Object.keys(rooms));
   });
 
-  // DELETE ROOM
-socket.on("delete-room", (roomName) => {
+  // ===== DELETE ROOM (FIXED) =====
+  socket.on("delete-room", (roomName) => {
 
-  const room = io.sockets.adapter.rooms.get(roomName);
+    if (!roomName) {
+      socket.emit("message", system("Provide room name"));
+      return;
+    }
 
-  // if room exists and has users → block delete
-  if (room && room.size > 0) {
-    socket.emit("message", createSystemMsg("❌ Room is not empty"));
-    return;
-  }
+    const room = io.sockets.adapter.rooms.get(roomName);
 
-  // delete from memory
-  if (rooms[roomName]) {
+    if (room && room.size > 0) {
+      socket.emit("message", system("❌ Room is not empty"));
+      return;
+    }
+
     delete rooms[roomName];
-  }
 
-  socket.emit("message", createSystemMsg(`✅ Room '${roomName}' deleted`));
-});
+    socket.emit("message", system(`✅ Room '${roomName}' deleted`));
+  });
 
-  // PRIVATE
+  // ===== LEAVE =====
+  socket.on("leave-room", () => {
+    const user = users[socket.id];
+    if (!user || !user.room) return;
+
+    socket.leave(user.room);
+    users[socket.id].room = null;
+
+    socket.emit("message", system("👋 Left room"));
+  });
+
+  // ===== PRIVATE =====
   socket.on("private-message", ({ to, message }) => {
     const sender = users[socket.id];
     if (!sender) return;
 
-    const target = Object.keys(users).find(
+    const targetId = Object.keys(users).find(
       id => users[id].username === to
     );
 
-    if (target) {
-      io.to(target).emit("private-message", {
+    if (targetId) {
+      io.to(targetId).emit("private-message", {
         from: sender.username,
         text: message,
         time: now()
@@ -92,10 +115,10 @@ socket.on("delete-room", (roomName) => {
     }
   });
 
-  // CODE
+  // ===== CODE =====
   socket.on("code-snippet", ({ language, content }) => {
     const user = users[socket.id];
-    if (!user) return;
+    if (!user || !user.room) return;
 
     const msg = {
       type: "code",
@@ -105,41 +128,15 @@ socket.on("delete-room", (roomName) => {
       time: now()
     };
 
-    saveMessage(user.room, msg);
+    save(user.room, msg);
     io.to(user.room).emit("code-snippet", msg);
   });
 
-  // DISCONNECT
-socket.on("disconnect", () => {
-  const user = users[socket.id];
-  if (!user) return;
+  // ===== DISCONNECT =====
+  socket.on("disconnect", () => {
+    delete users[socket.id];
+  });
 
-  const { username, room } = user;
-
-  if (room && rooms[room]) {
-    rooms[room].users = rooms[room].users.filter(
-      u => u !== username
-    );
-  }
-
-  delete users[socket.id];
-});
-
-});
-
-
-
-socket.on("leave-room", () => {
-  const user = users[socket.id];
-  if (!user || !user.room) return;
-
-  const roomName = user.room;
-
-  socket.leave(roomName);
-
-  users[socket.id].room = null;
-
-  socket.emit("message", createSystemMsg(`👋 Left ${roomName}`));
 });
 
 
@@ -149,14 +146,19 @@ function now() {
   return new Date().toLocaleTimeString();
 }
 
-function createSystemMsg(text) {
-  return { type: "system", text, time: now() };
+function system(text) {
+  return {
+    type: "system",
+    text,
+    time: now()
+  };
 }
 
-function saveMessage(room, msg) {
+function save(room, msg) {
   if (!rooms[room]) return;
 
   rooms[room].messages.push(msg);
+
   if (rooms[room].messages.length > 20) {
     rooms[room].messages.shift();
   }
