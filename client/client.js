@@ -26,15 +26,15 @@ function banner() {
 
 function help() {
   console.log(chalk.yellow("\nCommands:\n"));
-  console.log("/join <room>");
-  console.log("/leave");
-  console.log("/users");
-  console.log("/rooms");
-  console.log("/delete <room>");
-  console.log("/msg <user> <msg>");
-  console.log("/code <lang>");
-  console.log("/clear");
-  console.log("/exit\n");
+  console.log("/join <room>     → Join room");
+  console.log("/leave           → Leave room");
+  console.log("/users           → Show users");
+  console.log("/rooms           → Show rooms");
+  console.log("/delete <room>   → Delete room");
+  console.log("/msg <user> <m>  → Private msg");
+  console.log("/code <lang>     → Share code");
+  console.log("/clear           → Clear screen");
+  console.log("/exit            → Exit\n");
 }
 
 // ===== CONNECT =====
@@ -43,7 +43,13 @@ socket.on("connect", () => {
   banner();
 
   rl.question(chalk.green("Username: "), (name) => {
-    username = name;
+    username = name.trim();
+
+    if (!username) {
+      console.log(chalk.red("Username cannot be empty"));
+      process.exit(0);
+    }
+
     help();
     rl.setPrompt(chalk.blue("> "));
     rl.prompt();
@@ -54,45 +60,114 @@ socket.on("connect", () => {
 
 rl.on("line", (input) => {
 
+  input = input.trim();
+
+  // ===== CODE MODE =====
   if (codeMode) {
     if (input === "END") {
       socket.emit("code-snippet", {
         language: lang,
         content: buffer.join("\n")
       });
+
+      console.log(chalk.green("✅ Code sent\n"));
+
       codeMode = false;
       buffer = [];
-    } else buffer.push(input);
+    } else {
+      buffer.push(input);
+    }
+
     rl.prompt();
     return;
   }
 
+  // ===== JOIN =====
   if (input.startsWith("/join")) {
-    room = input.split(" ")[1];
-    socket.emit("join", { username, room });
+    const newRoom = input.split(" ")[1];
+
+    if (!newRoom) {
+      console.log(chalk.red("Provide room name"));
+    } else {
+      room = newRoom;
+      socket.emit("join", { username, room });
+      console.log(chalk.green(`Joined ${room}`));
+    }
   }
 
-  else if (input === "/users") socket.emit("get-users");
-  else if (input === "/rooms") socket.emit("get-rooms");
-  else if (input.startsWith("/delete")) socket.emit("delete-room", input.split(" ")[1]);
+  // ===== LEAVE =====
+  else if (input === "/leave") {
+    if (!room) {
+      console.log(chalk.red("Not in any room"));
+    } else {
+      socket.emit("leave-room");
+      console.log(chalk.yellow(`Left ${room}`));
+      room = "";
+    }
+  }
 
+  // ===== USERS =====
+  else if (input === "/users") {
+    if (!room) {
+      console.log(chalk.red("Join a room first"));
+    } else {
+      socket.emit("get-users");
+    }
+  }
+
+  // ===== ROOMS =====
+  else if (input === "/rooms") {
+    socket.emit("get-rooms");
+  }
+
+  // ===== DELETE =====
+  else if (input.startsWith("/delete")) {
+    const r = input.split(" ")[1];
+
+    if (!r) {
+      console.log(chalk.red("Provide room name"));
+    } else {
+      socket.emit("delete-room", r);
+    }
+  }
+
+  // ===== PRIVATE =====
   else if (input.startsWith("/msg")) {
     const parts = input.split(" ");
-    socket.emit("private-message", {
-      to: parts[1],
-      message: parts.slice(2).join(" ")
-    });
+    const to = parts[1];
+    const message = parts.slice(2).join(" ");
+
+    if (!to || !message) {
+      console.log(chalk.red("Usage: /msg user message"));
+    } else {
+      socket.emit("private-message", { to, message });
+    }
   }
 
+  // ===== CODE =====
   else if (input.startsWith("/code")) {
-    lang = input.split(" ")[1] || "text";
-    console.log(chalk.magenta("\nPaste code (END to send)\n"));
-    codeMode = true;
+    if (!room) {
+      console.log(chalk.red("Join a room first"));
+    } else {
+      lang = input.split(" ")[1] || "text";
+      console.log(chalk.magenta("\nPaste code (END to send)\n"));
+      codeMode = true;
+      buffer = [];
+    }
   }
 
-  else if (input === "/clear") banner();
-  else if (input === "/exit") process.exit(0);
+  // ===== CLEAR =====
+  else if (input === "/clear") {
+    banner();
+  }
 
+  // ===== EXIT =====
+  else if (input === "/exit") {
+    console.log(chalk.red("👋 Exiting..."));
+    process.exit(0);
+  }
+
+  // ===== NORMAL MESSAGE =====
   else {
     if (!room) {
       console.log(chalk.red("Join a room first"));
@@ -107,6 +182,8 @@ rl.on("line", (input) => {
 // ===== RECEIVE =====
 
 socket.on("history", (msgs) => {
+  if (!msgs.length) return;
+
   console.log(chalk.gray("\n--- Last Messages ---\n"));
   msgs.forEach(render);
 });
@@ -132,6 +209,8 @@ socket.on("code-snippet", render);
 // ===== RENDER =====
 
 function render(m) {
+
+  if (!m) return;
 
   if (m.type === "system") {
     console.log(chalk.gray(`[${m.time}] ${m.text}`));

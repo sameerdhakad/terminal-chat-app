@@ -60,12 +60,22 @@ io.on("connection", (socket) => {
   });
 
   // DELETE ROOM
-  socket.on("delete-room", (roomName) => {
-    if (rooms[roomName] && rooms[roomName].users.length === 0) {
-      delete rooms[roomName];
-      socket.emit("message", createSystemMsg(`Room ${roomName} deleted`));
-    }
-  });
+ socket.on("delete-room", (roomName) => {
+
+  if (!rooms[roomName]) {
+    socket.emit("message", createSystemMsg("Room does not exist"));
+    return;
+  }
+
+  if (rooms[roomName].users.length > 0) {
+    socket.emit("message", createSystemMsg("Room is not empty"));
+    return;
+  }
+
+  delete rooms[roomName];
+
+  socket.emit("message", createSystemMsg(`Room '${roomName}' deleted`));
+});
 
   // PRIVATE
   socket.on("private-message", ({ to, message }) => {
@@ -103,22 +113,44 @@ io.on("connection", (socket) => {
   });
 
   // DISCONNECT
-  socket.on("disconnect", () => {
-    const user = users[socket.id];
-    if (!user) return;
+socket.on("disconnect", () => {
+  const user = users[socket.id];
+  if (!user) return;
 
-    const room = user.room;
+  const { username, room } = user;
 
-    if (rooms[room]) {
-      rooms[room].users = rooms[room].users.filter(
-        u => u !== user.username
-      );
-    }
+  if (room && rooms[room]) {
+    rooms[room].users = rooms[room].users.filter(
+      u => u !== username
+    );
+  }
 
-    delete users[socket.id];
-  });
+  delete users[socket.id];
+});
 
 });
+
+
+
+socket.on("leave-room", () => {
+  const user = users[socket.id];
+  if (!user) return;
+
+  const { username, room } = user;
+
+  socket.leave(room);
+
+  if (rooms[room]) {
+    rooms[room].users = rooms[room].users.filter(
+      u => u !== username
+    );
+  }
+
+  users[socket.id].room = null;
+
+  socket.emit("message", createSystemMsg(`You left ${room}`));
+});
+
 
 // ===== HELPERS =====
 
