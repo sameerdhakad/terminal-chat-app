@@ -9,26 +9,22 @@ io.on("connection", (socket) => {
 
   // JOIN ROOM
   socket.on("join", ({ username, room }) => {
-    users[socket.id] = { username, room };
 
-    if (!rooms[room]) {
-      rooms[room] = { users: [], messages: [] };
-    }
+  users[socket.id] = { username, room };
 
-    socket.join(room);
+  if (!rooms[room]) {
+    rooms[room] = { messages: [] };
+  }
 
-    if (!rooms[room].users.includes(username)) {
-      rooms[room].users.push(username);
-    }
+  socket.join(room);
 
-    // SEND HISTORY
-    socket.emit("history", rooms[room].messages);
+  socket.emit("history", rooms[room].messages);
 
-    const joinMsg = createSystemMsg(`${username} joined ${room}`);
-    saveMessage(room, joinMsg);
+  const joinMsg = createSystemMsg(`${username} joined ${room}`);
+  saveMessage(room, joinMsg);
 
-    socket.to(room).emit("message", joinMsg);
-  });
+  socket.to(room).emit("message", joinMsg);
+});
 
   // SEND MESSAGE
   socket.on("send-message", (text) => {
@@ -60,20 +56,22 @@ io.on("connection", (socket) => {
   });
 
   // DELETE ROOM
-socket.on("delete-room", async (roomName) => {
+socket.on("delete-room", (roomName) => {
 
   const room = io.sockets.adapter.rooms.get(roomName);
 
-  // room exists and has users
+  // if room exists and has users → block delete
   if (room && room.size > 0) {
-    socket.emit("message", createSystemMsg("Room is not empty"));
+    socket.emit("message", createSystemMsg("❌ Room is not empty"));
     return;
   }
 
-  // room empty or not exists → safe to delete
-  delete rooms[roomName];
+  // delete from memory
+  if (rooms[roomName]) {
+    delete rooms[roomName];
+  }
 
-  socket.emit("message", createSystemMsg(`Room '${roomName}' deleted`));
+  socket.emit("message", createSystemMsg(`✅ Room '${roomName}' deleted`));
 });
 
   // PRIVATE
@@ -133,21 +131,15 @@ socket.on("disconnect", () => {
 
 socket.on("leave-room", () => {
   const user = users[socket.id];
-  if (!user) return;
+  if (!user || !user.room) return;
 
-  const { username, room } = user;
+  const roomName = user.room;
 
-  socket.leave(room);
-
-  if (rooms[room]) {
-    rooms[room].users = rooms[room].users.filter(
-      u => u !== username
-    );
-  }
+  socket.leave(roomName);
 
   users[socket.id].room = null;
 
-  socket.emit("message", createSystemMsg(`You left ${room}`));
+  socket.emit("message", createSystemMsg(`👋 Left ${roomName}`));
 });
 
 
